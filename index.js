@@ -11,7 +11,7 @@ const client = new Client({
     partials: ['CHANNEL'] 
 });
 
-// Simple English Questions
+// Simple and Clean English Questions
 const interviewQuestions = [
     "What is your Minecraft In-Game Name (IGN)?",
     "How old are you?",
@@ -22,13 +22,13 @@ const interviewQuestions = [
 const activeInterviews = new Map();
 
 client.on('ready', async () => {
-    console.log("🤖 [SYSTEM] Premium Whitelist Bot is Online and Ready!");
+    console.log("🤖 [SYSTEM] Whitelist Core Architecture Active and Online!");
     const guildId = client.guilds.cache.first()?.id;
     if (guildId) {
         const guild = client.guilds.cache.get(guildId);
         await guild.commands.set([{
             name: 'setup-whitelist',
-            description: 'Send the whitelist application panel.'
+            description: 'Send the premium whitelist application panel.'
         }]);
     }
 });
@@ -39,13 +39,13 @@ client.on('interactionCreate', async interaction => {
             .setTitle("🔒 SERVER WHITELIST PANEL")
             .setDescription(
                 "Welcome to our server application portal!\n\n" +
-                "**How to Apply:**\n" +
-                "• Click the **Apply Now** button below.\n" +
-                "• The bot will send you questions in your **DMs (Direct Messages)**.\n" +
-                "• Make sure your Discord DMs are **turned ON** so the bot can message you."
+                "**CRITICAL REQUIREMENTS:**\n" +
+                "• You **MUST link your account** first by joining the Minecraft Server.\n" +
+                "• After linking, click the **Apply Now** button below.\n" +
+                "• The bot will route the interview questions directly in your DMs."
             )
-            .setColor(0x00A2FF) // Classic Gamer Blue
-            .setFooter({ text: "Whitelist Verification System", iconURL: client.user.displayAvatarURL() })
+            .setColor(0x00A2FF)
+            .setFooter({ text: "Gateway Verification System", iconURL: client.user.displayAvatarURL() })
             .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
@@ -62,23 +62,36 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     if (interaction.customId === 'start_dm_interview') {
         const userId = interaction.user.id;
+        const guild = interaction.guild;
 
         if (activeInterviews.has(userId)) {
-            return interaction.reply({ content: "⚠️ You already have an active application process in your DMs!", ephemeral: true });
+            return interaction.reply({ content: "⚠️ You already have an ongoing application session pending in your DMs!", ephemeral: true });
+        }
+
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (member && member.roles.cache.has(process.env.WHITELIST_ROLE_ID)) {
+            return interaction.reply({ content: "🎉 Access Verification Status: Already whitelisted on this network!", ephemeral: true });
         }
 
         try {
-            activeInterviews.set(userId, { currentStep: 0, answers: [] });
+            activeInterviews.set(userId, { currentStep: 0, answers: [], isLinked: false });
             
-            const firstEmbed = new EmbedBuilder()
-                .setTitle("📝 Whitelist Application Started")
-                .setDescription(`Please answer all questions one by one.\n\n**Question 1:**\n\`${interviewQuestions[0]}\``)
-                .setColor(0x00A2FF);
+            const initialCheckEmbed = new EmbedBuilder()
+                .setTitle("🔑 LINK VERIFICATION PROTOCOL")
+                .setDescription(
+                    "Before we start the interview, please ensure your Minecraft account is linked.\n\n" +
+                    "**How to link:**\n" +
+                    "1. Join the Minecraft Server.\n" +
+                    "2. Copy the code given on your screen (e.g., `!link 1234`).\n" +
+                    "3. Type and send that exact command right here in this DM chat!\n\n" +
+                    "*(Once linked, you will see a confirmation message, then type anything to start your interview questions)*"
+                )
+                .setColor(0xFFAA00);
 
-            await interaction.user.send({ embeds: [firstEmbed] });
-            await interaction.reply({ content: "✅ Check your DMs! I have sent you the first question.", ephemeral: true });
+            await interaction.user.send({ embeds: [initialCheckEmbed] });
+            await interaction.reply({ content: "✅ **GATEWAY ROUTING:** Check your DMs to complete the linkage protocol.", ephemeral: true });
         } catch (error) {
-            await interaction.reply({ content: "❌ I couldn't message you! Please go to `User Settings -> Privacy & Safety` and turn on server direct messages.", ephemeral: true });
+            await interaction.reply({ content: "❌ **INTERFACE FAULT:** Direct Message access restricted. Turn on server DMs in your Privacy Settings.", ephemeral: true });
             activeInterviews.delete(userId);
         }
     }
@@ -90,27 +103,39 @@ client.on('messageCreate', async message => {
     if (!activeInterviews.has(userId)) return;
 
     const session = activeInterviews.get(userId);
+
+    // Filter Logic: If player sends DiscordSRV linking command, let DiscordSRV handle it natively
+    if (message.content.startsWith('!link') || message.content.toLowerCase().includes('account has been linked')) {
+        session.isLinked = true; 
+        return; 
+    }
+
+    // Step Lock: Block questions until player triggers linking validation sequence
+    if (!session.isLinked) {
+        await message.author.send("⚠️ **ACCESS DENIED:** You must enter the Minecraft server linking code here first before the interview questions can begin!");
+        return;
+    }
+
     session.answers.push(message.content);
     session.currentStep++;
 
     if (session.currentStep < interviewQuestions.length) {
         const nextEmbed = new EmbedBuilder()
-            .setTitle(`📊 Application Progress: ${session.currentStep + 1}/${interviewQuestions.length}`)
+            .setTitle(`📊 Application Tracker: ${session.currentStep + 1}/${interviewQuestions.length}`)
             .setDescription(`**Question ${session.currentStep + 1}:**\n\`${interviewQuestions[session.currentStep]}\``)
             .setColor(0x00A2FF);
             
         await message.author.send({ embeds: [nextEmbed] });
     } else {
         const finalEmbed = new EmbedBuilder()
-            .setTitle("✅ Application Submitted!")
-            .setDescription("Thank you! Your answers have been successfully submitted to the server staff team. Please wait for the result.")
+            .setTitle("⚙️ SUBMISSION SECURED")
+            .setDescription("Thank you! Your answers have been successfully forwarded to the Administration Hub. Please wait for evaluation.")
             .setColor(0x2ECC71);
             
         await message.author.send({ embeds: [finalEmbed] });
         
         const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
         if (staffChannel) {
-            // Index pointers fixed precisely to map array entries correctly onto different fields
             const pIgn = session.answers[0] || "None";
             const pAge = session.answers[1] || "None";
             const pRules = session.answers[2] || "None";
@@ -118,7 +143,7 @@ client.on('messageCreate', async message => {
 
             const adminReviewEmbed = new EmbedBuilder()
                 .setTitle("🚨 NEW WHITELIST APPLICATION")
-                .setDescription("A new player has submitted an interview form. Please review the details below.")
+                .setDescription("A candidate profile submission requires administrative review parameters.")
                 .setColor(0xFFAA00)
                 .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
                 .addFields(
@@ -130,16 +155,16 @@ client.on('messageCreate', async message => {
                     { name: '📜 Rules & Terms Knowledge', value: `\`\`\`text\n${pRules}\`\`\``, inline: false },
                     { name: '🚀 Reason For Joining', value: `\`\`\`text\n${pReason}\`\`\``, inline: false }
                 )
-                .setFooter({ text: "Staff Review System" })
+                .setFooter({ text: "Staff Evaluation Console" })
                 .setTimestamp();
 
             const cleanIgn = pIgn.replace(/\s+/g, '');
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`adm_accept_${userId}_${cleanIgn}`).setLabel('APPROVE APPLICATION ✅').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`adm_deny_${userId}`).setLabel('REJECT APPLICATION ❌').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`adm_accept_${userId}_${cleanIgn}`).setLabel('APPROVE FILE PROTOCOL ✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`adm_deny_${userId}`).setLabel('REJECT INTERFACE DETECT ❌').setStyle(ButtonStyle.Danger)
             );
 
-            await staffChannel.send({ content: "🔔 **@here New application received! Online staff please check.**", embeds: [adminReviewEmbed], components: [row] }).catch(console.error);
+            await staffChannel.send({ content: "🔔 **@here New application received! Online staff please verify.**", embeds: [adminReviewEmbed], components: [row] }).catch(console.error);
         }
         activeInterviews.delete(userId);
     }
@@ -154,15 +179,15 @@ client.on('interactionCreate', async interaction => {
     const ign = tokens[3] || "Player";
 
     if (action === 'accept') {
-        const modal = new ModalBuilder().setCustomId(`mdl_accept_${targetUserId}_${ign}`).setTitle('Application Approval');
-        const reasonInput = new TextInputBuilder().setCustomId('accept_reason').setLabel("Enter the reason for acceptance:").setStyle(TextInputStyle.Short).setRequired(true);
+        const modal = new ModalBuilder().setCustomId(`mdl_accept_${targetUserId}_${ign}`).setTitle('Application Approval Core');
+        const reasonInput = new TextInputBuilder().setCustomId('accept_reason').setLabel("Enter the reason for verification log:").setStyle(TextInputStyle.Short).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
         await interaction.showModal(modal);
     }
 
     if (action === 'deny') {
-        const modal = new ModalBuilder().setCustomId(`mdl_deny_${targetUserId}`).setTitle('Application Rejection');
-        const reasonInput = new TextInputBuilder().setCustomId('deny_reason').setLabel("Enter the reason for rejection:").setStyle(TextInputStyle.Paragraph).setRequired(true);
+        const modal = new ModalBuilder().setCustomId(`mdl_deny_${targetUserId}`).setTitle('Application Rejection Archive');
+        const reasonInput = new TextInputBuilder().setCustomId('deny_reason').setLabel("Specify explicit dismissal notes:").setStyle(TextInputStyle.Paragraph).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
         await interaction.showModal(modal);
     }
@@ -181,19 +206,25 @@ client.on('interactionCreate', async interaction => {
         const reason = interaction.fields.getTextInputValue('accept_reason');
 
         const guild = interaction.guild;
+        if (!guild) return interaction.editReply({ content: "❌ Server validation pipeline error." });
+
         const member = await guild.members.fetch(targetUserId).catch(() => null);
         if (member) {
-            await member.roles.add(process.env.WHITELIST_ROLE_ID).catch(() => null);
+            const roleId = process.env.WHITELIST_ROLE_ID;
+            if (roleId) {
+                // Strict hierarchical enforcement execution sequence
+                await member.roles.add(roleId).catch(err => console.error("Role Error logs mapping error:", err));
+            }
             
             const dmSuccess = new EmbedBuilder()
                 .setTitle("🎉 Application Status: Approved")
-                .setDescription(`Congratulations! Your application has been accepted onto the whitelist server network.\n\n**Staff Notes:**\n\`${reason}\``)
+                .setDescription(`Congratulations! Your verification profile parameters have been checked and approved onto the premium network.\n\n**Staff Notes:**\n\`${reason}\``)
                 .setColor(0x2ECC71);
                 
             await member.send({ embeds: [dmSuccess] }).catch(() => null);
         }
 
-        await interaction.editReply({ content: "✅ **Success:** Player has been whitelisted and notified in DMs." });
+        await interaction.editReply({ content: "✅ **SYSTEM SECURITY SYNC:** File processed successfully. Target Whitelisted." });
         await interaction.message.delete().catch(() => null);
     }
 
@@ -206,17 +237,17 @@ client.on('interactionCreate', async interaction => {
         if (member) {
             const dmFail = new EmbedBuilder()
                 .setTitle("❌ Application Status: Rejected")
-                .setDescription(`Sorry, your whitelist application has been rejected by the staff team.\n\n**Reason:**\n\`${reason}\``)
+                .setDescription(`Sorry, your application parameters have been denied access clear authorization.\n\n**Reason:**\n\`${reason}\``)
                 .setColor(0xE74C3C);
                 
             await member.send({ embeds: [dmFail] }).catch(() => null);
         }
 
-        await interaction.editReply({ content: "❌ **Success:** Application profile rejected and purged." });
+        await interaction.editReply({ content: "❌ **SYSTEM SECURITY SYNC:** Applicant credentials purged successfully." });
         await interaction.message.delete().catch(() => null);
     }
 });
 
 const http = require('http');
-http.createServer((req, res) => { res.write("Premium Whitelist Panel Active."); res.end(); }).listen(process.env.PORT || 3000);
+http.createServer((req, res) => { res.write("Premium Global Network Operational Engine."); res.end(); }).listen(process.env.PORT || 3000);
 client.login(process.env.DISCORD_TOKEN);
