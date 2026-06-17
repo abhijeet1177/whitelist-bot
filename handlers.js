@@ -1,6 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-// The 4 Whitelist Questions for QUIL SMP
 const QUESTIONS = [
     "What is your In-Game Name (IGN)?",
     "What is your Age?",
@@ -8,14 +7,12 @@ const QUESTIONS = [
     "Why do you want to join QUIL SMP?"
 ];
 
-// Handles Button Clicks (Apply, Approve, Reject)
 async function handleInteractions(interaction, db) {
     const guildId = interaction.guild?.id;
     const userId = interaction.user.id;
 
     if (!interaction.isButton()) return;
 
-    // A. APPLICANT REGISTRATION TRIGGER
     if (interaction.customId === 'start_whitelist_app') {
         const serverConfig = await db.get(`guild_config_${guildId}`);
         if (!serverConfig || !serverConfig.roleId) {
@@ -41,7 +38,6 @@ async function handleInteractions(interaction, db) {
         }
     }
 
-    // B. COMPREHENSIVE STAFF APPROVAL SYSTEM (PRESERVING EMBEDS)
     if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('reject_')) {
         if (!interaction.member.permissions.has('ManageRoles')) {
             return interaction.reply({ content: "❌ You do not have permissions to review applications.", ephemeral: true });
@@ -56,7 +52,6 @@ async function handleInteractions(interaction, db) {
             if (!targetMember) return interaction.reply({ content: "❌ This player is no longer in the server.", ephemeral: true });
 
             try {
-                // Automatically assign the role that was saved using /setup command
                 await targetMember.roles.add(serverConfig.roleId);
 
                 const approvedEmbed = EmbedBuilder.from(interaction.message.embeds)
@@ -86,7 +81,6 @@ async function handleInteractions(interaction, db) {
     }
 }
 
-// Handles DM Questions and Submissions
 async function handleMessages(message, client, db) {
     if (message.author.bot || message.guild) return;
 
