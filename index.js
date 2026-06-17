@@ -1,4 +1,4 @@
-require('dotenv').config(); // Load environment variables first
+require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
 const { QuickDB } = require('quick.db');
 const config = require('./config.json');
@@ -14,119 +14,160 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// Configure your whitelist questions here
+// The 4 Whitelist Questions for QUIL SMP
 const QUESTIONS = [
-    "What is your In-Game ID and Age?",
-    "Which servers have you played on before?",
-    "What do you understand by Fail RP and Metagaming?"
+    "What is your In-Game Name (IGN)?",
+    "What is your Age?",
+    "Have you played on any SMP before? (If yes, name it)",
+    "Why do you want to join QUIL SMP?"
 ];
 
-// ==========================================
-// 1. BOT READY & SLASH COMMAND REGISTRATION
-// ==========================================
+// REGISTER SLASH COMMAND
 client.once('ready', async () => {
-    console.log(`🤖 ${client.user.tag} is now Online!`);
+    console.log(`🤖 ${client.user.tag} is active and ready for QUIL SMP!`);
     
     const commands = [
         {
             name: 'setup-whitelist',
-            description: 'Configure the whitelist system',
+            description: 'Send the official Whitelist Access Terminal panel',
             options: [
-                { name: 'role', description: 'Select the Whitelisted/Verified role', type: 8, required: true },
-                { name: 'log_channel', description: 'Select the channel for logs and approvals', type: 7, required: true }
+                { name: 'role', description: 'Select the Whitelist Member role', type: 8, required: true },
+                { name: 'log_channel', description: 'Select the Staff Log/Approval channel', type: 7, required: true }
             ]
         }
     ];
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-        console.log('⏳ Registering slash commands...');
         await rest.put(Routes.applicationGuildCommands(config.clientId, config.guildId), { body: commands });
-        console.log('✅ Slash Commands Successfully Registered!');
+        console.log('✅ Whitelist Setup Command Registered Successfully!');
     } catch (error) {
-        console.error('❌ Error registering slash commands:', error);
+        console.error('Slash registration error:', error);
     }
 });
 
-// ==========================================
-// 2. SETUP COMMANDS (SLASH & BACKUP PREFIX)
-// ==========================================
+// SETUP COMMAND & CREATING THE EMBED PANEL WITH BUTTON
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'setup-whitelist') {
         if (!interaction.member.permissions.has('Administrator')) {
-            return interaction.reply({ content: "❌ Permission denied. Administrator access required.", ephemeral: true });
+            return interaction.reply({ content: "❌ You need Administrator permissions to run this.", ephemeral: true });
         }
 
         const role = interaction.options.getRole('role');
         const logChannel = interaction.options.getChannel('log_channel');
 
+        // Save server configuration
         await db.set(`guild_config_${interaction.guild.id}`, { roleId: role.id, logChannelId: logChannel.id });
-        return interaction.reply({ content: `✅ **Setup Successful!**\n🔹 Role: <@&${role.id}>\n🔹 Channel: <#${logChannel.id}>`, ephemeral: true });
+
+        // Create the Access Terminal Embed for QUIL SMP
+        const panelEmbed = new EmbedBuilder()
+            .setTitle("🛑 QUIL SMP : ACCESS TERMINAL 🛑")
+            .setColor(0xE74C3C)
+            .setDescription(
+                "Welcome to the official **QUIL SMP** Whitelist Portal.\n\n" +
+                "**📋 Requirements:**\n" +
+                "• Follow all server rules.\n" +
+                "• Provide your exact Minecraft Username.\n" +
+                "• Be respectful to the community.\n\n" +
+                "Click the button below to submit your application to our staff."
+            )
+            .setFooter({ text: "QUIL SMP Security System" })
+            .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('start_whitelist_app')
+                .setLabel('Apply For Whitelist 📝')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        // Send to the channel where command was typed
+        await interaction.reply({ content: "✅ Whitelist system setup successfully here!", ephemeral: true });
+        return interaction.channel.send({ embeds: [panelEmbed], components: [row] });
     }
 });
 
-client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.guild) return;
+// INTERACTION BUTTON HANDLER (APPLY BUTTON & APPROVALS)
+client.on('interactionCreate', async (interaction) => {
+    const guildId = interaction.guild?.id;
+    const userId = interaction.user.id;
 
-    if (message.content.startsWith('!setup')) {
-        if (!message.member.permissions.has('Administrator')) return;
-
-        const args = message.content.split(' ');
-        const roleMention = args[1];
-        const channelMention = args[2];
-
-        if (!roleMention || !channelMention) {
-            return message.reply("❌ **Correct Format:** \`!setup @RoleName #ChannelName\`");
+    // 1. WHEN USER CLICKS "APPLY FOR WHITELIST"
+    if (interaction.isButton() && interaction.customId === 'start_whitelist_app') {
+        const serverConfig = await db.get(`guild_config_${guildId}`);
+        if (!serverConfig) {
+            return interaction.reply({ content: "❌ System error: Setup configuration is missing.", ephemeral: true });
         }
 
-        const roleId = roleMention.replace(/[<@&>]/g, '');
-        const logChannelId = channelMention.replace(/[<#>]/g, '');
+        // Check if user already has the whitelist role
+        if (interaction.member.roles.cache.has(serverConfig.roleId)) {
+            return interaction.reply({ content: "❌ You are already whitelisted on this server!", ephemeral: true });
+        }
 
-        await db.set(`guild_config_${message.guild.id}`, { roleId, logChannelId });
-        return message.reply(`✅ **Prefix Setup Complete!**\nRole ID: \`${roleId}\`\nChannel ID: \`${logChannelId}\``);
-    }
-});
-
-// ==========================================
-// 3. 4-DIGIT VERIFICATION & DM QUESTIONS
-// ==========================================
-client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.guild) return;
-
-    const codeRegex = /^\d{4}$/; // Matches exactly 4 digits
-
-    if (codeRegex.test(message.content)) {
-        const userId = message.author.id;
-        const guildId = message.guild.id;
-
-        const serverConfig = await db.get(`guild_config_${guildId}`);
-        if (!serverConfig) return message.reply("⚠️ Bot is not configured yet. Ask an admin to run \`/setup-whitelist\` or \`!setup\`.");
-
-        // GLITCH FIX 1: Already verified user handling
-        const isVerified = await db.get(`verified_${guildId}_${userId}`);
-        if (isVerified) return message.reply("❌ Put the code again");
-
+        // Check if application session is already active
         const activeApp = await db.get(`active_app_${userId}`);
-        if (activeApp) return message.reply("⏳ Your application process is already running. Please check your DMs!");
+        if (activeApp) {
+            return interaction.reply({ content: "⏳ Your application is already active. Please complete it in your DMs!", ephemeral: true });
+        }
 
         try {
+            // Setup session state
             await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
-            await message.author.send(`✅ **Code [${message.content}] verified!**\n\n**Question 1:** ${QUESTIONS[0]}`);
-            await message.reply("📥 I have sent the questions to your DM!");
+            
+            await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\nPlease answer the following 4 questions.\n\n**Question 1:** ${QUESTIONS}`);
+            return interaction.reply({ content: "📥 **Check your DMs!** The bot has sent you the first question.", ephemeral: true });
         } catch (err) {
             await db.delete(`active_app_${userId}`);
-            await message.reply("❌ Your DMs are closed! Please open your privacy settings and try again.");
+            return interaction.reply({ content: "❌ **Failed to send DM!** Please open your Direct Messages (DMs) in Privacy Settings and try again.", ephemeral: true });
+        }
+    }
+
+    // 2. STAFF APPROVAL AND DENIAL BUTTONS
+    if (interaction.isButton() && (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('reject_'))) {
+        if (!interaction.member.permissions.has('ManageRoles')) {
+            return interaction.reply({ content: "❌ You do not have permissions to review applications.", ephemeral: true });
+        }
+
+        const [action, targetUserId] = interaction.customId.split('_');
+        const serverConfig = await db.get(`guild_config_${guildId}`);
+        const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
+
+        if (action === 'approve') {
+            if (!targetMember) return interaction.reply({ content: "❌ This player has left the server.", ephemeral: true });
+
+            try {
+                // Add Whitelist Role
+                await targetMember.roles.add(serverConfig.roleId);
+
+                const approvedEmbed = EmbedBuilder.from(interaction.message.embeds)
+                    .setColor(0x2ECC71)
+                    .setTitle("✅ Application Approved (Passed)");
+
+                await interaction.update({ embeds: [approvedEmbed], components: [] });
+                return targetMember.send("🎉 **Congratulations!** Your whitelist application has been approved for QUIL SMP. You can join the server now!").catch(() => null);
+            } catch (error) {
+                return interaction.reply({ content: "❌ **Role Hierarchy Error!** Open Server Settings -> Roles, and drag your Bot's role ABOVE the Whitelisted role.", ephemeral: true });
+            }
+        }
+
+        if (action === 'reject') {
+            const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds)
+                .setColor(0xE74C3C)
+                .setTitle("❌ Application Rejected (Failed)");
+
+            await interaction.update({ embeds: [rejectedEmbed], components: [] });
+            if (targetMember) {
+                return targetMember.send("❌ **Sorry**, your whitelist application has been rejected by the QUIL SMP staff team.").catch(() => null);
+            }
         }
     }
 });
 
-// ==========================================
-// 4. DM QUESTIONNAIRE HANDLING
-// ==========================================
+// DM QUESTIONNAIRE INTERACTION FOR DM RESPONSES
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || message.guild) return; // Process DM only
+    if (message.author.bot || message.guild) return; // Process DMs only
 
     const userId = message.author.id;
     const appData = await db.get(`active_app_${userId}`);
@@ -138,9 +179,9 @@ client.on('messageCreate', async (message) => {
 
     if (currentStep < QUESTIONS.length) {
         await db.set(`active_app_${userId}`, { guildId, currentStep, answers });
-        await message.author.send(`**Question ${currentStep + 1}:** ${QUESTIONS[currentStep]}`);
+        return message.author.send(`**Question ${currentStep + 1}:** ${QUESTIONS[currentStep]}`);
     } else {
-        await message.author.send("🎉 Your answers have been submitted! Please wait for staff verification.");
+        await message.author.send("🎉 **All answers submitted!** Our staff will review your application shortly.");
         
         const serverConfig = await db.get(`guild_config_${guildId}`);
         const logChannel = await client.channels.fetch(serverConfig.logChannelId).catch(() => null);
@@ -149,7 +190,7 @@ client.on('messageCreate', async (message) => {
             const embed = new EmbedBuilder()
                 .setTitle("📝 New Whitelist Application")
                 .setColor(0x3498DB)
-                .setDescription(`**User:** <@${userId}> (\`${userId}\`)`)
+                .setDescription(`**Applicant:** <@${userId}> (\`${userId}\`)`)
                 .setTimestamp();
 
             QUESTIONS.forEach((q, idx) => embed.addFields({ name: `❓ ${q}`, value: `➡️ ${answers[idx]}` }));
@@ -161,47 +202,7 @@ client.on('messageCreate', async (message) => {
 
             await logChannel.send({ embeds: [embed], components: [row] });
         }
-        await db.delete(`active_app_${userId}`);
-    }
-});
-
-// ==========================================
-// 5. BUTTON ACTIONS & ROLE GLITCH FIX
-// ==========================================
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-
-    const [action, targetUserId] = interaction.customId.split('_');
-    const guildId = interaction.guild.id;
-    const serverConfig = await db.get(`guild_config_${guildId}`);
-
-    if (!interaction.member.permissions.has('ManageRoles')) {
-        return interaction.reply({ content: "❌ You do not have permission to manage applications.", ephemeral: true });
-    }
-
-    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
-
-    if (action === 'approve') {
-        if (!targetMember) return interaction.reply({ content: "❌ User is no longer in the server.", ephemeral: true });
-
-        try {
-            // GLITCH FIX 2: Safe Role Hierarchy Assignment
-            await targetMember.roles.add(serverConfig.roleId);
-            await db.set(`verified_${guildId}_${targetUserId}`, true);
-
-            const approvedEmbed = EmbedBuilder.from(interaction.message.embeds).setColor(0x2ECC71).setTitle("✅ Application Approved");
-            await interaction.update({ embeds: [approvedEmbed], components: [] });
-            await targetMember.send("🎉 Congratulations! Your whitelist application has been approved!").catch(() => null);
-        } catch (error) {
-            console.error("Role Error Logged:", error);
-            return interaction.reply({ content: "❌ **Role Error!** Check Discord Server Settings -> Roles, and drag the bot role above the whitelisted role.", ephemeral: true });
-        }
-    }
-
-    if (action === 'reject') {
-        const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds).setColor(0xE74C3C).setTitle("❌ Application Rejected");
-        await interaction.update({ embeds: [rejectedEmbed], components: [] });
-        if (targetMember) await targetMember.send("❌ Sorry, your whitelist application has been rejected.").catch(() => null);
+        return db.delete(`active_app_${userId}`);
     }
 });
 
