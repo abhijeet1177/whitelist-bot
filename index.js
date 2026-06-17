@@ -97,22 +97,39 @@ client.on('interactionCreate', async interaction => {
     }
 });
 client.on('messageCreate', async message => {
-    if (message.author.bot || message.guild) return;
+    // Custom Filter Layer: DiscordSRV ke automatic messages ko read karke user ko instant verify karna
+    if (message.author.bot) {
+        if (message.content.toLowerCase().includes('already linked to') || message.content.toLowerCase().includes('account has been linked')) {
+            // Find the user channel history to extract active session threshold
+            const channelId = message.channel.id;
+            for (const [userId, session] of activeInterviews.entries()) {
+                const user = await client.users.fetch(userId).catch(() => null);
+                const dmChannel = await user?.createDM().catch(() => null);
+                if (dmChannel && dmChannel.id === channelId) {
+                    session.isLinked = true;
+                    await dmChannel.send("🔗 **LINK DETECTED:** Verification successful! Please type anything here to start your interview questions.");
+                    break;
+                }
+            }
+        }
+        return;
+    }
+
+    if (message.guild) return;
 
     const userId = message.author.id;
     if (!activeInterviews.has(userId)) return;
 
     const session = activeInterviews.get(userId);
 
-    // Filter Logic: If player sends DiscordSRV linking command, let DiscordSRV handle it natively
-    if (message.content.startsWith('!link') || message.content.toLowerCase().includes('account has been linked')) {
-        session.isLinked = true; 
+    // Bypass system: If user sends standard link trigger, skip response logging
+    if (message.content.startsWith('!link')) {
         return; 
     }
 
-    // Step Lock: Block questions until player triggers linking validation sequence
+    // Step Lock: Check threshold matrix validation before prompting questions
     if (!session.isLinked) {
-        await message.author.send("⚠️ **ACCESS DENIED:** You must enter the Minecraft server linking code here first before the interview questions can begin!");
+        await message.author.send("⚠️ **ACCESS DENIED:** You must complete the Minecraft server linkage verification loop first!");
         return;
     }
 
@@ -169,6 +186,7 @@ client.on('messageCreate', async message => {
         activeInterviews.delete(userId);
     }
 });
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     const tokens = interaction.customId.split('_');
