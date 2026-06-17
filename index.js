@@ -1,237 +1,212 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType } = require('discord.js');
+]const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
+const { QuickDB } = require('quick.db');
+const config = require('./config.json');
 
+const db = new QuickDB();
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMessages, 
-        GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.DirectMessages
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers
     ],
-    partials: ['CHANNEL'] 
+    partials: [Partials.Channel]
 });
 
-// Simple English Questions
-const interviewQuestions = [
-    "What is your Minecraft In-Game Name (IGN)?",
-    "How old are you?",
-    "What do you know about server rules? (Explain briefly)",
-    "Why do you want to join our SMP server?"
+// Whitelist ke Sawal (Aap inko badal sakte hain)
+const QUESTIONS = [
+    "Aapki In-Game ID aur Age kya hai?",
+    "Aapne pehle kis server par Roleplay kiya hai?",
+    "Fail RP aur Metagaming se aap kya samajhte hain?"
 ];
 
-const activeInterviews = new Map();
-
-client.on('ready', async () => {
-    console.log("🤖 [SYSTEM] Whitelist Bot is Online and Ready!");
-    const guildId = client.guilds.cache.first()?.id;
-    if (guildId) {
-        const guild = client.guilds.cache.get(guildId);
-        await guild.commands.set([{
+client.once('ready', async () => {
+    console.log(`🤖 ${client.user.tag} Online hai!`);
+    
+    // Slash Command Register karna
+    const commands = [
+        {
             name: 'setup-whitelist',
-            description: 'Send the whitelist application panel.'
-        }]);
+            description: 'Whitelist system ko setup karein',
+            options: [
+                { name: 'role', description: 'Verified role select karein', type: 8, required: true }, // ROLE
+                { name: 'log_channel', description: 'Logs channel select karein', type: 7, required: true } // CHANNEL
+            ]
+        }
+    ];
+
+    const rest = new REST({ version: '10' }).setToken(config.token);
+    try {
+        await rest.put(Routes.applicationGuildCommands(config.clientId, config.guildId), { body: commands });
+        console.log('✅ Setup Slash Command successfully registered!');
+    } catch (error) {
+        console.error(error);
     }
 });
-client.on('interactionCreate', async interaction => {
+
+// 1. SETUP COMMAND HANDLER
+client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName === 'setup-whitelist') {
-        const embed = new EmbedBuilder()
-            .setTitle("🔒 SERVER WHITELIST PANEL")
-            .setDescription(
-                "Welcome to our server application portal!\n\n" +
-                "**How to Apply:**\n" +
-                "• Click the **Apply Now** button below.\n" +
-                "• The bot will send you questions in your **DMs (Direct Messages)**.\n" +
-                "• Make sure your Discord DMs are **turned ON** so the bot can message you."
-            )
-            .setColor(0x00A2FF)
-            .setFooter({ text: "Whitelist Verification System", iconURL: client.user.displayAvatarURL() })
-            .setTimestamp();
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('start_dm_interview')
-                .setLabel('APPLY NOW 📝')
-                .setStyle(ButtonStyle.Primary)
-        );
-        await interaction.reply({ embeds: [embed], components: [row] });
+    if (interaction.commandName === 'setup-whitelist') {
+        if (!interaction.member.permissions.has('Administrator')) {
+            return interaction.reply({ content: "❌ Aapke paas Permission nahi hai.", ephemeral: true });
+        }
+
+        const role = interaction.options.getRole('role');
+        const logChannel = interaction.options.getChannel('log_channel');
+
+        await db.set(`guild_config_${interaction.guildId}`, {
+            roleId: role.id,
+            logChannelId: logChannel.id
+        });
+
+        return interaction.reply({ content: `✅ **Setup Complete!**\nVerified Role: <@&${role.id}>\nLog Channel: <#${logChannel.id}>`, ephemeral: true });
     }
 });
 
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId === 'start_dm_interview') {
-        const userId = interaction.user.id;
-        const guild = interaction.guild;
+// 2. 4-DIGIT CODE & QUESTIONS GLITCH FIX
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || !message.guild) return;
 
-        if (activeInterviews.has(userId)) {
-            return interaction.reply({ content: "⚠️ You already have an active application process in your DMs!", ephemeral: true });
+    // Check agar message exact 4-digit number hai
+    const codeRegex = /^\d{4}$/;
+
+    if (codeRegex.test(message.content)) {
+        const userId = message.author.id;
+        const guildId = message.guild.id;
+
+        // Check if bot setup is done
+        const serverConfig = await db.get(`guild_config_${guildId}`);
+        if (!serverConfig) return message.reply("⚠️ Pehle Admin ko `/setup-whitelist` command chalani hogi!");
+
+        // Check kya user pehle se verified hai
+        const isVerified = await db.get(`verified_${guildId}_${userId}`);
+        if (isVerified) {
+            return message.reply("❌ Put the code again");
         }
 
-        const member = await guild.members.fetch(userId).catch(() => null);
-        if (member && member.roles.cache.has(process.env.WHITELIST_ROLE_ID)) {
-            return interaction.reply({ content: "🎉 You are already whitelisted on this server!", ephemeral: true });
-        }
+        // Check agar user pehle se application de raha hai
+        const activeApp = await db.get(`active_app_${userId}`);
+        if (activeApp) return message.reply("⏳ Aapka application process pehle se chalu hai. Dm check karein!");
 
         try {
-            activeInterviews.set(userId, { currentStep: 0, answers: [] });
+            // User ko DM bhejna aur process shuru karna
+            await message.author.send(`✅ **Code ${message.content} verified!** Chaliye aapka whitelist application shuru karte hain.\n\n**Sawal 1:** ${QUESTIONS[0]}`);
             
-            const firstEmbed = new EmbedBuilder()
-                .setTitle("📝 Whitelist Application Started")
-                .setDescription(`Please answer all questions one by one.\n\n**Question 1:**\n\`${interviewQuestions[0]}\``)
-                .setColor(0x00A2FF);
+            // Database me user ka session save karna
+            await db.set(`active_app_${userId}`, {
+                guildId: guildId,
+                currentStep: 0,
+                answers: []
+            });
 
-            await interaction.user.send({ embeds: [firstEmbed] });
-            await interaction.reply({ content: "✅ Check your DMs! I have sent you the first question.", ephemeral: true });
-        } catch (error) {
-            await interaction.reply({ content: "❌ I couldn't message you! Please enable server direct messages in your Settings.", ephemeral: true });
-            activeInterviews.delete(userId);
+            await message.reply("📥 Mene aapko DM me questions bhej diye hain, check karein!");
+        } catch (err) {
+            await message.reply("❌ Aapka DM closed hai! Please settings se DMs open karein.");
         }
     }
 });
-client.on('messageCreate', async message => {
-    // DiscordSRV notifications completely ignored here to prevent freeze loops
-    if (message.author.bot || message.guild) return;
+
+// 3. DM INTERACTION (Sawal-Jawab Handle Karna)
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || message.guild) return; // Sirf DMs ke liye
 
     const userId = message.author.id;
-    if (!activeInterviews.has(userId)) return;
+    const appData = await db.get(`active_app_${userId}`);
+    if (!appData) return;
 
-    const session = activeInterviews.get(userId);
-    
-    if (message.content.startsWith('!')) return;
+    let { guildId, currentStep, answers } = appData;
+    answers.push(message.content);
 
-    session.answers.push(message.content);
-    session.currentStep++;
+    currentStep++;
 
-    if (session.currentStep < interviewQuestions.length) {
-        const nextEmbed = new EmbedBuilder()
-            .setTitle(`📊 Application Progress: ${session.currentStep + 1}/${interviewQuestions.length}`)
-            .setDescription(`**Question ${session.currentStep + 1}:**\n\`${interviewQuestions[session.currentStep]}\``)
-            .setColor(0x00A2FF);
-            
-        await message.author.send({ embeds: [nextEmbed] });
+    if (currentStep < QUESTIONS.length) {
+        // Agla sawal bhein
+        await db.set(`active_app_${userId}`, { guildId, currentStep, answers });
+        await message.author.send(`**Sawal ${currentStep + 1}:** ${QUESTIONS[currentStep]}`);
     } else {
-        const finalEmbed = new EmbedBuilder()
-            .setTitle("✅ Application Submitted!")
-            .setDescription("Thank you! Your answers have been successfully submitted to the server staff team. Please wait for the result.")
-            .setColor(0x2ECC71);
-            
-        await message.author.send({ embeds: [finalEmbed] });
+        // Saare sawal khatam, ab logs channel me bhejenge approval ke liye
+        await message.author.send("🎉 Aapke saare answers submit ho gaye hain! Admin ke decision ka wait karein.");
         
-        const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
-        if (staffChannel) {
-            // Strict element parsing block mapping schemas
-            const pIgn = session.answers[0] || "None";
-            const pAge = session.answers[1] || "None";
-            const pRules = session.answers[2] || "None";
-            const pReason = session.answers[3] || "None";
+        const serverConfig = await db.get(`guild_config_${guildId}`);
+        const logChannel = await client.channels.fetch(serverConfig.logChannelId);
 
-            const adminReviewEmbed = new EmbedBuilder()
-                .setTitle("🚨 NEW WHITELIST APPLICATION")
-                .setDescription("A new player has submitted an interview form. Please review the details below.")
-                .setColor(0xFFAA00)
-                .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-                .addFields(
-                    { name: '👤 Applicant User', value: `<@${userId}>`, inline: true },
-                    { name: '🆔 Account ID', value: `\`${userId}\``, inline: true },
-                    { name: '\u200B', value: '\u200B', inline: false },
-                    { name: '🎮 Minecraft IGN', value: `\`${pIgn}\``, inline: true },
-                    { name: '📅 Player Age', value: `\`${pAge}\``, inline: true },
-                    { name: '📜 Rules & Terms Knowledge', value: `\`\`\`text\n${pRules}\`\`\``, inline: false },
-                    { name: '🚀 Reason For Joining', value: `\`\`\`text\n${pReason}\`\`\``, inline: false }
-                )
-                .setFooter({ text: "Staff Review System" })
+        if (logChannel) {
+            const embed = new EmbedBuilder()
+                .setTitle("📝 Naya Whitelist Application")
+                .setColor(0x0099FF)
+                .setDescription(`**User:** <@${userId}> (${userId})`)
                 .setTimestamp();
 
-            const cleanIgn = pIgn.replace(/\s+/g, '');
+            QUESTIONS.forEach((q, index) => {
+                embed.addFields({ name: `Q: ${q}`, value: `A: ${answers[index]}` });
+            });
+
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`adm_accept_${userId}_${cleanIgn}`).setLabel('APPROVE APPLICATION ✅').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`adm_deny_${userId}`).setLabel('REJECT APPLICATION ❌').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`approve_${userId}`).setLabel('Approve ✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`reject_${userId}`).setLabel('Reject ❌').setStyle(ButtonStyle.Danger)
             );
 
-            await staffChannel.send({ content: "🔔 **@here New application received! Online staff please check.**", embeds: [adminReviewEmbed], components: [row] }).catch(console.error);
+            await logChannel.send({ embeds: [embed], components: [row] });
         }
-        activeInterviews.delete(userId);
+
+        // Session delete karein taaki wo pending me na rahe
+        await db.delete(`active_app_${userId}`);
     }
 });
-client.on('interactionCreate', async interaction => {
+
+// 4. ROLE GLITCH FIX (BUTTON HANDLER)
+client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
-    const tokens = interaction.customId.split('_');
-    if (tokens[0] !== 'adm') return;
 
-    const action = tokens[1];
-    const targetUserId = tokens[2];
-    const ign = tokens[3] || "Player";
+    const [action, targetUserId] = interaction.customId.split('_');
+    const guildId = interaction.guild.id;
 
-    if (action === 'accept') {
-        const modal = new ModalBuilder().setCustomId(`mdl_accept_${targetUserId}_${ign}`).setTitle('Application Approval');
-        const reasonInput = new TextInputBuilder().setCustomId('accept_reason').setLabel("Enter the reason for acceptance:").setStyle(TextInputStyle.Short).setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
-        await interaction.showModal(modal);
-    }
+    const serverConfig = await db.get(`guild_config_${guildId}`);
+    if (!serverConfig) return interaction.reply({ content: "Error: Setup config nahi mili.", ephemeral: true });
 
-    if (action === 'deny') {
-        const modal = new ModalBuilder().setCustomId(`mdl_deny_${targetUserId}`).setTitle('Application Rejection');
-        const reasonInput = new TextInputBuilder().setCustomId('deny_reason').setLabel("Enter the reason for rejection:").setStyle(TextInputStyle.Paragraph).setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
-        await interaction.showModal(modal);
-    }
-});
+    const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
 
-client.on('interactionCreate', async interaction => {
-    if (interaction.type !== InteractionType.ModalSubmit) return;
-    const tokens = interaction.customId.split('_');
-    if (tokens[0] !== 'mdl') return;
+    if (action === 'approve') {
+        if (!targetMember) return interaction.reply({ content: "❌ User server chhod kar chala gaya.", ephemeral: true });
 
-    const action = tokens[1];
-    const targetUserId = tokens[2];
-
-    if (action === 'accept') {
-        await interaction.deferReply({ ephemeral: true });
-        const reason = interaction.fields.getTextInputValue('accept_reason');
-
-        const guild = interaction.guild;
-        if (!guild) return interaction.editReply({ content: "❌ Server validation context error." });
-
-        const member = await guild.members.fetch(targetUserId).catch(() => null);
-        if (member) {
-            const roleId = process.env.WHITELIST_ROLE_ID;
-            if (roleId) {
-                await member.roles.add(roleId).catch(err => console.error("Role assignment error:", err));
-            }
+        try {
+            // Role add karna
+            await targetMember.roles.add(serverConfig.roleId);
             
-            const dmSuccess = new EmbedBuilder()
-                .setTitle("🎉 Application Status: Approved")
-                .setDescription(`Congratulations! Your application has been accepted onto the whitelist server network.\n\n**Staff Notes:**\n\`${reason}\``)
-                .setColor(0x2ECC71);
-                
-            await member.send({ embeds: [dmSuccess] }).catch(() => null);
-        }
+            // Database me verified set karna
+            await db.set(`verified_${guildId}_${targetUserId}`, true);
 
-        await interaction.editReply({ content: "✅ **Success:** Player has been whitelisted and notified in DMs." });
-        await interaction.message.delete().catch(() => null);
+            // Embed update karna
+            const oldEmbed = interaction.message.embeds[0];
+            const approvedEmbed = EmbedBuilder.from(oldEmbed)
+                .setColor(0x00FF00)
+                .setTitle("✅ Application Approved");
+
+            await interaction.update({ embeds: [approvedEmbed], components: [] });
+            
+            // User ko inform karna
+            await targetMember.send("🎉 Mubarak ho! Aapka Whitelist pass ho gaya hai aur aapko Role mil gaya hai.").catch(() => null);
+
+        } catch (error) {
+            console.error(error);
+            return interaction.reply({ content: "❌ Role dene me dikkat aayi! Check karein ki bot ka Role settings me sabse upar ho.", ephemeral: true });
+        }
     }
 
-    if (action === 'deny') {
-        await interaction.deferReply({ ephemeral: true });
-        const reason = interaction.fields.getTextInputValue('deny_reason');
+    if (action === 'reject') {
+        const oldEmbed = interaction.message.embeds[0];
+        const rejectedEmbed = EmbedBuilder.from(oldEmbed)
+            .setColor(0xFF0000)
+            .setTitle("❌ Application Rejected");
 
-        const guild = interaction.guild;
-        const member = await guild.members.fetch(targetUserId).catch(() => null);
-        if (member) {
-            const dmFail = new EmbedBuilder()
-                .setTitle("❌ Application Status: Rejected")
-                .setDescription(`Sorry, your whitelist application has been rejected by the staff team.\n\n**Reason:**\n\`${reason}\``)
-                .setColor(0xE74C3C);
-                
-            await member.send({ embeds: [dmFail] }).catch(() => null);
+        await interaction.update({ embeds: [rejectedEmbed], components: [] });
+
+        if (targetMember) {
+            await targetMember.send("❌ Sorry, aapka whitelist application reject ho gaya hai.").catch(() => null);
         }
-
-        await interaction.editReply({ content: "❌ **Success:** Application profile rejected and purged." });
-        await interaction.message.delete().catch(() => null);
     }
 });
 
-const http = require('http');
-http.createServer((req, res) => { res.write("Premium Whitelist Panel Active."); res.end(); }).listen(process.env.PORT || 3000);
-client.login(process.env.DISCORD_TOKEN);
+client.login(config.token);
