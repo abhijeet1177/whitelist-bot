@@ -1,4 +1,4 @@
-]const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
 const { QuickDB } = require('quick.db');
 const config = require('./config.json');
 
@@ -13,104 +13,119 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// Whitelist ke Sawal (Aap inko badal sakte hain)
+// Whitelist Questions (Aap inko yahan badal sakte hain)
 const QUESTIONS = [
     "Aapki In-Game ID aur Age kya hai?",
     "Aapne pehle kis server par Roleplay kiya hai?",
     "Fail RP aur Metagaming se aap kya samajhte hain?"
 ];
 
+// ==========================================
+// 1. BOT READY & SLASH COMMAND REGISTRATION
+// ==========================================
 client.once('ready', async () => {
-    console.log(`🤖 ${client.user.tag} Online hai!`);
+    console.log(`🤖 ${client.user.tag} Online ho gaya hai!`);
     
-    // Slash Command Register karna
     const commands = [
         {
             name: 'setup-whitelist',
-            description: 'Whitelist system ko setup karein',
+            description: 'Whitelist system ko configure karein',
             options: [
-                { name: 'role', description: 'Verified role select karein', type: 8, required: true }, // ROLE
-                { name: 'log_channel', description: 'Logs channel select karein', type: 7, required: true } // CHANNEL
+                { name: 'role', description: 'Verified/Whitelisted role select karein', type: 8, required: true },
+                { name: 'log_channel', description: 'Logs aur Approval channel select karein', type: 7, required: true }
             ]
         }
     ];
 
     const rest = new REST({ version: '10' }).setToken(config.token);
     try {
+        console.log('⏳ Slash commands register ho rahe hain...');
         await rest.put(Routes.applicationGuildCommands(config.clientId, config.guildId), { body: commands });
-        console.log('✅ Setup Slash Command successfully registered!');
+        console.log('✅ Slash Commands Successfully Registered!');
     } catch (error) {
-        console.error(error);
+        console.error('❌ Slash command register karne me error aaya:', error);
     }
 });
 
-// 1. SETUP COMMAND HANDLER
+// ==========================================
+// 2. SETUP COMMANDS (SLASH & BACKUP PREFIX)
+// ==========================================
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'setup-whitelist') {
         if (!interaction.member.permissions.has('Administrator')) {
-            return interaction.reply({ content: "❌ Aapke paas Permission nahi hai.", ephemeral: true });
+            return interaction.reply({ content: "❌ Permission denied.", ephemeral: true });
         }
 
         const role = interaction.options.getRole('role');
         const logChannel = interaction.options.getChannel('log_channel');
 
-        await db.set(`guild_config_${interaction.guildId}`, {
-            roleId: role.id,
-            logChannelId: logChannel.id
-        });
-
-        return interaction.reply({ content: `✅ **Setup Complete!**\nVerified Role: <@&${role.id}>\nLog Channel: <#${logChannel.id}>`, ephemeral: true });
+        await db.set(`guild_config_${interaction.guild.id}`, { roleId: role.id, logChannelId: logChannel.id });
+        return interaction.reply({ content: `✅ **Setup Successful!**\n🔹 Role: <@&${role.id}>\n🔹 Channel: <#${logChannel.id}>`, ephemeral: true });
     }
 });
 
-// 2. 4-DIGIT CODE & QUESTIONS GLITCH FIX
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // Check agar message exact 4-digit number hai
-    const codeRegex = /^\d{4}$/;
+    if (message.content.startsWith('!setup')) {
+        if (!message.member.permissions.has('Administrator')) return;
+
+        const args = message.content.split(' ');
+        const roleMention = args[1];
+        const channelMention = args[2];
+
+        if (!roleMention || !channelMention) {
+            return message.reply("❌ **Sahi format:** `!setup @RoleName #ChannelName`");
+        }
+
+        const roleId = roleMention.replace(/[<@&>]/g, '');
+        const logChannelId = channelMention.replace(/[<#>]/g, '');
+
+        await db.set(`guild_config_${message.guild.id}`, { roleId, logChannelId });
+        return message.reply(`✅ **Prefix Setup Complete!**\nRole ID: \`${roleId}\`\nChannel ID: \`${logChannelId}\``);
+    }
+});
+
+// ==========================================
+// 3. 4-DIGIT VERIFICATION & DM QUESTIONS
+// ==========================================
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || !message.guild) return;
+
+    const codeRegex = /^\d{4}$/; // Strict 4-Digit match
 
     if (codeRegex.test(message.content)) {
         const userId = message.author.id;
         const guildId = message.guild.id;
 
-        // Check if bot setup is done
         const serverConfig = await db.get(`guild_config_${guildId}`);
-        if (!serverConfig) return message.reply("⚠️ Pehle Admin ko `/setup-whitelist` command chalani hogi!");
+        if (!serverConfig) return message.reply("⚠️ Bot setup nahi hua hai. Admin ko kahein `/setup-whitelist` chalayein.");
 
-        // Check kya user pehle se verified hai
+        // GLITCH FIX 1: Already verified user handling
         const isVerified = await db.get(`verified_${guildId}_${userId}`);
-        if (isVerified) {
-            return message.reply("❌ Put the code again");
-        }
+        if (isVerified) return message.reply("❌ Put the code again");
 
-        // Check agar user pehle se application de raha hai
         const activeApp = await db.get(`active_app_${userId}`);
-        if (activeApp) return message.reply("⏳ Aapka application process pehle se chalu hai. Dm check karein!");
+        if (activeApp) return message.reply("⏳ Aapka process pehle se chalu hai. DM check karein!");
 
         try {
-            // User ko DM bhejna aur process shuru karna
-            await message.author.send(`✅ **Code ${message.content} verified!** Chaliye aapka whitelist application shuru karte hain.\n\n**Sawal 1:** ${QUESTIONS[0]}`);
-            
-            // Database me user ka session save karna
-            await db.set(`active_app_${userId}`, {
-                guildId: guildId,
-                currentStep: 0,
-                answers: []
-            });
-
-            await message.reply("📥 Mene aapko DM me questions bhej diye hain, check karein!");
+            await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
+            await message.author.send(`✅ **Code [${message.content}] verified!**\n\n**Sawal 1:** ${QUESTIONS[0]}`);
+            await message.reply("📥 Mene aapko DM me questions bhej diye hain!");
         } catch (err) {
-            await message.reply("❌ Aapka DM closed hai! Please settings se DMs open karein.");
+            await db.delete(`active_app_${userId}`);
+            await message.reply("❌ Aapka DM closed hai! Please Settings se DMs open karein.");
         }
     }
 });
 
-// 3. DM INTERACTION (Sawal-Jawab Handle Karna)
+// ==========================================
+// 4. DM QUESTIONNAIRE HANDLING
+// ==========================================
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || message.guild) return; // Sirf DMs ke liye
+    if (message.author.bot || message.guild) return;
 
     const userId = message.author.id;
     const appData = await db.get(`active_app_${userId}`);
@@ -118,30 +133,25 @@ client.on('messageCreate', async (message) => {
 
     let { guildId, currentStep, answers } = appData;
     answers.push(message.content);
-
     currentStep++;
 
     if (currentStep < QUESTIONS.length) {
-        // Agla sawal bhein
         await db.set(`active_app_${userId}`, { guildId, currentStep, answers });
         await message.author.send(`**Sawal ${currentStep + 1}:** ${QUESTIONS[currentStep]}`);
     } else {
-        // Saare sawal khatam, ab logs channel me bhejenge approval ke liye
-        await message.author.send("🎉 Aapke saare answers submit ho gaye hain! Admin ke decision ka wait karein.");
+        await message.author.send("🎉 Answers submit ho gaye hain! Staff verification ka wait karein.");
         
         const serverConfig = await db.get(`guild_config_${guildId}`);
-        const logChannel = await client.channels.fetch(serverConfig.logChannelId);
+        const logChannel = await client.channels.fetch(serverConfig.logChannelId).catch(() => null);
 
         if (logChannel) {
             const embed = new EmbedBuilder()
                 .setTitle("📝 Naya Whitelist Application")
-                .setColor(0x0099FF)
-                .setDescription(`**User:** <@${userId}> (${userId})`)
+                .setColor(0x3498DB)
+                .setDescription(`**User:** <@${userId}> (\`${userId}\`)`)
                 .setTimestamp();
 
-            QUESTIONS.forEach((q, index) => {
-                embed.addFields({ name: `Q: ${q}`, value: `A: ${answers[index]}` });
-            });
+            QUESTIONS.forEach((q, idx) => embed.addFields({ name: `❓ ${q}`, value: `➡️ ${answers[idx]}` }));
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`approve_${userId}`).setLabel('Approve ✅').setStyle(ButtonStyle.Success),
@@ -150,62 +160,46 @@ client.on('messageCreate', async (message) => {
 
             await logChannel.send({ embeds: [embed], components: [row] });
         }
-
-        // Session delete karein taaki wo pending me na rahe
         await db.delete(`active_app_${userId}`);
     }
 });
 
-// 4. ROLE GLITCH FIX (BUTTON HANDLER)
+// ==========================================
+// 5. BUTTON ACTIONS & ROLE GLITCH FIX
+// ==========================================
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
     const [action, targetUserId] = interaction.customId.split('_');
     const guildId = interaction.guild.id;
-
     const serverConfig = await db.get(`guild_config_${guildId}`);
-    if (!serverConfig) return interaction.reply({ content: "Error: Setup config nahi mili.", ephemeral: true });
+
+    if (!interaction.member.permissions.has('ManageRoles')) {
+        return interaction.reply({ content: "❌ Permissions missing.", ephemeral: true });
+    }
 
     const targetMember = await interaction.guild.members.fetch(targetUserId).catch(() => null);
 
     if (action === 'approve') {
-        if (!targetMember) return interaction.reply({ content: "❌ User server chhod kar chala gaya.", ephemeral: true });
+        if (!targetMember) return interaction.reply({ content: "❌ Player server me nahi hai.", ephemeral: true });
 
         try {
-            // Role add karna
+            // GLITCH FIX 2: Safe Role Hierarchy Assignment
             await targetMember.roles.add(serverConfig.roleId);
-            
-            // Database me verified set karna
             await db.set(`verified_${guildId}_${targetUserId}`, true);
 
-            // Embed update karna
-            const oldEmbed = interaction.message.embeds[0];
-            const approvedEmbed = EmbedBuilder.from(oldEmbed)
-                .setColor(0x00FF00)
-                .setTitle("✅ Application Approved");
-
+            const approvedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setTitle("✅ Application Approved");
             await interaction.update({ embeds: [approvedEmbed], components: [] });
-            
-            // User ko inform karna
-            await targetMember.send("🎉 Mubarak ho! Aapka Whitelist pass ho gaya hai aur aapko Role mil gaya hai.").catch(() => null);
-
+            await targetMember.send("🎉 Mubarak ho! Aapka Whitelist pass ho gaya hai!").catch(() => null);
         } catch (error) {
-            console.error(error);
-            return interaction.reply({ content: "❌ Role dene me dikkat aayi! Check karein ki bot ka Role settings me sabse upar ho.", ephemeral: true });
+            return interaction.reply({ content: "❌ **Role error!** Discord Server Settings -> Roles me jaakar bot ke role ko sabse upar scroll karein.", ephemeral: true });
         }
     }
 
     if (action === 'reject') {
-        const oldEmbed = interaction.message.embeds[0];
-        const rejectedEmbed = EmbedBuilder.from(oldEmbed)
-            .setColor(0xFF0000)
-            .setTitle("❌ Application Rejected");
-
+        const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xE74C3C).setTitle("❌ Application Rejected");
         await interaction.update({ embeds: [rejectedEmbed], components: [] });
-
-        if (targetMember) {
-            await targetMember.send("❌ Sorry, aapka whitelist application reject ho gaya hai.").catch(() => null);
-        }
+        if (targetMember) await targetMember.send("❌ Aapka whitelist application reject ho gaya hai.").catch(() => null);
     }
 });
 
