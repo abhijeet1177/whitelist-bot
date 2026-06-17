@@ -22,7 +22,7 @@ const interviewQuestions = [
 const activeInterviews = new Map();
 
 client.on('ready', async () => {
-    console.log("🤖 [SYSTEM] Whitelist Bot is Online and Ready!");
+    console.log("🤖 [SYSTEM] Premium Whitelist Bot is Online and Ready!");
     const guildId = client.guilds.cache.first()?.id;
     if (guildId) {
         const guild = client.guilds.cache.get(guildId);
@@ -110,27 +110,36 @@ client.on('messageCreate', async message => {
         
         const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
         if (staffChannel) {
+            // Index pointers fixed precisely to map array entries correctly onto different fields
+            const pIgn = session.answers[0] || "None";
+            const pAge = session.answers[1] || "None";
+            const pRules = session.answers[2] || "None";
+            const pReason = session.answers[3] || "None";
+
             const adminReviewEmbed = new EmbedBuilder()
                 .setTitle("🚨 NEW WHITELIST APPLICATION")
-                .setColor(0x2C2F33)
+                .setDescription("A new player has submitted an interview form. Please review the details below.")
+                .setColor(0xFFAA00)
                 .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
                 .addFields(
-                    { name: '👤 Applicant', value: `<@${userId}> (\`${userId}\`)`, inline: false },
-                    { name: '🆔 Minecraft IGN', value: `\`${session.answers[0] || "None"}\``, inline: true },
-                    { name: '📅 Age', value: `\`${session.answers[1] || "None"}\``, inline: true },
-                    { name: '🧠 Rules Knowledge', value: `\`\`\`text\n${session.answers[2] || "None"}\`\`\``, inline: false },
-                    { name: '🚀 Reason to Join', value: `\`\`\`text\n${session.answers[3] || "None"}\`\`\``, inline: false }
+                    { name: '👤 Applicant User', value: `<@${userId}>`, inline: true },
+                    { name: '🆔 Account ID', value: `\`${userId}\``, inline: true },
+                    { name: '\u200B', value: '\u200B', inline: false },
+                    { name: '🎮 Minecraft IGN', value: `\`${pIgn}\``, inline: true },
+                    { name: '📅 Player Age', value: `\`${pAge}\``, inline: true },
+                    { name: '📜 Rules & Terms Knowledge', value: `\`\`\`text\n${pRules}\`\`\``, inline: false },
+                    { name: '🚀 Reason For Joining', value: `\`\`\`text\n${pReason}\`\`\``, inline: false }
                 )
-                .setFooter({ text: "Staff Review Panel" })
+                .setFooter({ text: "Staff Review System" })
                 .setTimestamp();
 
-            const cleanIgn = (session.answers[0] || "Player").replace(/\s+/g, '');
+            const cleanIgn = pIgn.replace(/\s+/g, '');
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`adm_accept_${userId}_${cleanIgn}`).setLabel('APPROVE ✅').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`adm_deny_${userId}`).setLabel('REJECT ❌').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`adm_accept_${userId}_${cleanIgn}`).setLabel('APPROVE APPLICATION ✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`adm_deny_${userId}`).setLabel('REJECT APPLICATION ❌').setStyle(ButtonStyle.Danger)
             );
 
-            await staffChannel.send({ embeds: [adminReviewEmbed], components: [row] }).catch(console.error);
+            await staffChannel.send({ content: "🔔 **@here New application received! Online staff please check.**", embeds: [adminReviewEmbed], components: [row] }).catch(console.error);
         }
         activeInterviews.delete(userId);
     }
