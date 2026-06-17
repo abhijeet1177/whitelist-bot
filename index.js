@@ -15,11 +15,9 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// REGISTER REWORKED /SETUP COMMAND
 client.once('ready', async () => {
-    console.log(`🤖 ${client.user.tag} is active and running with Split Files!`);
+    console.log(`🤖 [SYSTEM] Premium Whitelist Code Active And Online!`);
     
-    // Exactly the command format you asked for: /setup role [rolename]
     const commands = [
         {
             name: 'setup',
@@ -28,13 +26,13 @@ client.once('ready', async () => {
                 {
                     name: 'role',
                     description: 'The Whitelisted/Member role to give upon approval',
-                    type: 8, // ROLE TYPE
+                    type: 8, 
                     required: true
                 },
                 {
                     name: 'log_channel',
                     description: 'The Staff channel where application embeds will be sent',
-                    type: 7, // CHANNEL TYPE
+                    type: 7, 
                     required: true
                 }
             ]
@@ -50,7 +48,7 @@ client.once('ready', async () => {
     }
 });
 
-// SLASH SETUP COMMAND PROCESSOR
+// CRASH-PROOFED SETUP HANDLING
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -62,7 +60,6 @@ client.on('interactionCreate', async (interaction) => {
         const role = interaction.options.getRole('role');
         const logChannel = interaction.options.getChannel('log_channel');
 
-        // Save inside quick.db dynamically
         await db.set(`guild_config_${interaction.guild.id}`, { roleId: role.id, logChannelId: logChannel.id });
 
         const panelEmbed = new EmbedBuilder()
@@ -86,17 +83,16 @@ client.on('interactionCreate', async (interaction) => {
                 .setStyle(ButtonStyle.Success)
         );
 
+        // FIX: Using followUp or sending cleanly to prevent the 40060 Acknowledge Error
         await interaction.reply({ content: `✅ **Setup Complete!** Linked Role: <@&${role.id}>`, ephemeral: true });
         return interaction.channel.send({ embeds: [panelEmbed], components: [row] });
     }
 });
 
-// REDIRECT BUTTON INTERACTIONS TO HANDLERS.JS
 client.on('interactionCreate', async (interaction) => {
     await handleInteractions(interaction, db);
 });
 
-// REDIRECT DM RESPONSES TO HANDLERS.JS
 client.on('messageCreate', async (message) => {
     await handleMessages(message, client, db);
 });
