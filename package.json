@@ -1,13 +1,14 @@
 {
-  "name": "free-whitelist-bot",
+  "name": "whitelist-bot",
   "version": "1.0.0",
+  "description": "QUIL SMP Advanced Whitelist Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "rcon-client": "^4.2.3",
-    "dotenv": "^16.4.5"
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "quick.db": "^9.1.7"
   }
 }
