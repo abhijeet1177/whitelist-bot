@@ -11,7 +11,7 @@ const client = new Client({
     partials: ['CHANNEL'] 
 });
 
-// Ekdum Normal aur Asaan English Questions
+// Simple English Questions
 const interviewQuestions = [
     "What is your Minecraft In-Game Name (IGN)?",
     "How old are you?",
