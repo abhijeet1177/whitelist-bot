@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
+// The 4 Whitelist Questions strictly defined as an array
 const QUESTIONS = [
     "What is your In-Game Name (IGN)?",
     "What is your Age?",
@@ -7,12 +8,14 @@ const QUESTIONS = [
     "Why do you want to join QUIL SMP?"
 ];
 
+// Handles Button Clicks (Apply, Approve, Reject)
 async function handleInteractions(interaction, db) {
     const guildId = interaction.guild?.id;
     const userId = interaction.user.id;
 
     if (!interaction.isButton()) return;
 
+    // A. APPLICANT REGISTRATION TRIGGER
     if (interaction.customId === 'start_whitelist_app') {
         const serverConfig = await db.get(`guild_config_${guildId}`);
         if (!serverConfig || !serverConfig.roleId) {
@@ -29,8 +32,10 @@ async function handleInteractions(interaction, db) {
         }
 
         try {
+            // Correct indexing to only send the FIRST question (Index 0)
             await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
-            await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\nPlease answer the following 4 questions accurately.\n\n**Question 1:** ${QUESTIONS}`);
+            
+            await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS[0]}`);
             return interaction.reply({ content: "📥 **Check your DMs!** The first question has been sent to your inbox.", ephemeral: true });
         } catch (err) {
             await db.delete(`active_app_${userId}`);
@@ -38,6 +43,7 @@ async function handleInteractions(interaction, db) {
         }
     }
 
+    // B. STAFF APPROVAL AND REJECTION SYSTEM
     if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('reject_')) {
         if (!interaction.member.permissions.has('ManageRoles')) {
             return interaction.reply({ content: "❌ You do not have permissions to review applications.", ephemeral: true });
@@ -54,7 +60,7 @@ async function handleInteractions(interaction, db) {
             try {
                 await targetMember.roles.add(serverConfig.roleId);
 
-                const approvedEmbed = EmbedBuilder.from(interaction.message.embeds)
+                const approvedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
                     .setColor(0x2ECC71)
                     .setTitle("✅ Application Approved")
                     .addFields({ name: "🛡️ Action Taken By", value: `${interaction.user} (\`${staffName}\`)`, inline: false });
@@ -67,7 +73,7 @@ async function handleInteractions(interaction, db) {
         }
 
         if (action === 'reject') {
-            const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds)
+            const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
                 .setColor(0xE74C3C)
                 .setTitle("❌ Application Rejected")
                 .addFields({ name: "🛡️ Action Taken By", value: `${interaction.user} (\`${staffName}\`)`, inline: false });
@@ -81,6 +87,7 @@ async function handleInteractions(interaction, db) {
     }
 }
 
+// Handles DM Questions Sequentially
 async function handleMessages(message, client, db) {
     if (message.author.bot || message.guild) return;
 
@@ -89,11 +96,14 @@ async function handleMessages(message, client, db) {
     if (!appData) return;
 
     let { guildId, currentStep, answers } = appData;
+    
+    // Save current answer safely
     answers.push(message.content);
     currentStep++;
 
     if (currentStep < QUESTIONS.length) {
         await db.set(`active_app_${userId}`, { guildId, currentStep, answers });
+        // Send exactly NEXT question one-by-one
         return message.author.send(`**Question ${currentStep + 1}:** ${QUESTIONS[currentStep]}`);
     } else {
         const finalInstructionsEmbed = new EmbedBuilder()
