@@ -1,8 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType } = require('discord.js');
-const { Rcon } = require('rcon-client');
 
-// DM system ke liye Partials aur Intents zaroori hain
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds, 
@@ -13,70 +11,80 @@ const client = new Client({
     partials: ['CHANNEL'] 
 });
 
-// Sawal jo bot DM me player se poochega (Aap badal sakte hain)
+// Premium High-Tier English Questions
 const interviewQuestions = [
-    "Apna Minecraft In-Game Name (IGN) likhein:",
-    "Aapki Age (Umar) kya hai?",
-    "Fail RP ya Griffing se aap kya samajhte hain?",
-    "Aap humare server ko kyun join karna chahte hain?"
+    "What is your Minecraft In-Game Name (IGN)?",
+    "How old are you? (Age)",
+    "Explain 'Meta Gaming' or 'Fail RP' in your own words:",
+    "Why do you want to join our premium SMP server?"
 ];
 
-// Players ke state save rakhne ke liye temporary storage
 const activeInterviews = new Map();
 
 client.on('ready', async () => {
-    console.log(`🤖 Zeta-Style Whitelist Bot Online Hai!`);
+    console.log("🤖 [SYSTEM] Premium Whitelist Code Active And Online!");
     const guildId = client.guilds.cache.first()?.id;
     if (guildId) {
         const guild = client.guilds.cache.get(guildId);
         await guild.commands.set([{
             name: 'setup-whitelist',
-            description: 'Whitelist Apply karne ka professional panel bhejein.'
+            description: 'Deploys the luxury network whitelisting panel.'
         }]);
     }
 });
-
-// Slash Command chalne par Apply Button lagana
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
     if (interaction.commandName === 'setup-whitelist') {
         const embed = new EmbedBuilder()
-            .setTitle("🔒 SERVER WHITELIST APPLICATION")
-            .setDescription("Humare server par khelne ke liye niche diye gaye button par click karein. Bot aapko **DM (Direct Message)** me interview ke sawal bhejega!")
-            .setColor(0x2F3136)
-            .setFooter({ text: "Zeta Whitelist System" });
+            .setTitle("🔒 ACCESS CONTROL SECURITY GATEWAY")
+            .setDescription(
+                "Welcome to the official application network portal.\n\n" +
+                "**APPLICATION PROTOCOLS:**\n" +
+                "• Click the initiation interface terminal below.\n" +
+                "• The system will route an automated DM screening matrix.\n" +
+                "• Ensure your Direct Messages (DMs) are configured to **PUBLIC**."
+            )
+            .setColor(0x00D2FF)
+            .setFooter({ text: "SECURE AUDIT PIPELINE • PROTOCOL v1.2", iconURL: client.user.displayAvatarURL() })
+            .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('start_dm_interview').setLabel('Apply Kaise Karein (Click Here)').setStyle(ButtonStyle.Primary)
+            new ButtonBuilder()
+                .setCustomId('start_dm_interview')
+                .setLabel('INITIATE APPLICANT VERIFICATION')
+                .setStyle(ButtonStyle.Primary)
         );
         await interaction.reply({ embeds: [embed], components: [row] });
     }
 });
 
-// Button click karne par DM me interview shuru karna
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     if (interaction.customId === 'start_dm_interview') {
         const userId = interaction.user.id;
 
         if (activeInterviews.has(userId)) {
-            return interaction.reply({ content: "❌ Aapka interview pehle se hi aapke DM me chal raha hai!", ephemeral: true });
+            return interaction.reply({ content: "⚠️ `CRITICAL ERROR:` You have an ongoing interview session pending in your DMs.", ephemeral: true });
         }
 
         try {
             activeInterviews.set(userId, { currentStep: 0, answers: [] });
-            await interaction.user.send(`👋 Hello! Humare server me entry ke liye aapka interview shuru ho chuka hai.\n\n**Sawal 1:** ${interviewQuestions[0]}`);
-            await interaction.reply({ content: "✅ Check karein! Maine aapke DM (Inbox) me sawal bhej diya hai.", ephemeral: true });
+            
+            const firstEmbed = new EmbedBuilder()
+                .setTitle("📋 AUDIT SCRIPT INITIALIZED")
+                .setDescription(`Please respond to all parameters sequentially.\n\n**PARAMETER ONE:**\n\`${interviewQuestions[0]}\``)
+                .setColor(0x00D2FF);
+
+            await interaction.user.send({ embeds: [firstEmbed] });
+            await interaction.reply({ content: "✅ **ROUTING SUCCESS:** Automated screening forwarded to your Direct Messages.", ephemeral: true });
         } catch (error) {
-            await interaction.reply({ content: "❌ Aapka DM closed hai! Please settings me jaakar 'Allow Direct Messages from server members' on karein.", ephemeral: true });
+            await interaction.reply({ content: "❌ **INTERFACE FAULT:** Direct Message access restricted. Navigate to `User Settings -> Privacy & Safety` and enable server text delivery.", ephemeral: true });
             activeInterviews.delete(userId);
         }
     }
 });
-
-// DM me answers collect karne ka main logic
 client.on('messageCreate', async message => {
-    if (message.author.bot || message.guild) return; // Sirf user ke DM message read karega
+    if (message.author.bot || message.guild) return;
 
     const userId = message.author.id;
     if (!activeInterviews.has(userId)) return;
@@ -85,88 +93,99 @@ client.on('messageCreate', async message => {
     session.answers.push(message.content);
     session.currentStep++;
 
-    // Agar abhi aur sawal baaki hain
     if (session.currentStep < interviewQuestions.length) {
-        await message.author.send(`**Sawal ${session.currentStep + 1}:** ${interviewQuestions[session.currentStep]}`);
+        const nextEmbed = new EmbedBuilder()
+            .setTitle(`📊 MATRIX PROGRESS: TRACK ${session.currentStep + 1}/${interviewQuestions.length}`)
+            .setDescription(`**PARAMETER ${session.currentStep + 1}:**\n\`${interviewQuestions[session.currentStep]}\``)
+            .setColor(0x00D2FF);
+            
+        await message.author.send({ embeds: [nextEmbed] });
     } else {
-        // Saare sawal poore hone par code automatic staff channel me bhejega
-        await message.author.send("⏳ Thank you! Aapke saare answers automatic submit ho chuke hain. Staff ke decision ka wait karein.");
+        const finalEmbed = new EmbedBuilder()
+            .setTitle("⚙️ TELEMETRY PROFILE SUBMITTED")
+            .setDescription("Your validation request application has been completely synchronized to the Administration Hub.")
+            .setColor(0x00FF7F);
+            
+        await message.author.send({ embeds: [finalEmbed] });
         
         const staffChannel = client.channels.cache.get(process.env.STAFF_CHANNEL_ID);
         if (staffChannel) {
-            const embed = new EmbedBuilder()
-                .setTitle("📝 Nayi Whitelist Application (Zeta System)")
-                .setColor(0x36393F)
+            const adminReviewEmbed = new EmbedBuilder()
+                .setTitle("🚨 APPLICANT FILE PROFILE INCOMING")
+                .setColor(0x1F1F1F)
+                .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
                 .addFields(
-                    { name: 'Discord User', value: `<@${userId}>`, inline: true },
-                    { name: 'IGN', value: session.answers[0], inline: true },
-                    { name: 'Age', value: session.answers[1], inline: true },
-                    { name: 'Rules Knowledge', value: session.answers[2] },
-                    { name: 'Reason to Join', value: session.answers[3] }
-                );
+                    { name: '👤 CANDIDATE ACCOUNT ID', value: `<@${userId}> (\`${userId}\`)`, inline: false },
+                    { name: '🆔 REGISTERED TARGET IGN', value: `\`${session.answers[0] || "None"}\``, inline: true },
+                    { name: '📅 CHRONO AGE METRIC', value: `\`${session.answers[1] || "None"}\``, inline: true },
+                    { name: '🧠 ADVANCED TERMINOLOGY RULE CHECK', value: `\`\`\`text\n${session.answers[2] || "None"}\`\`\``, inline: false },
+                    { name: '🚀 CLIENT CONNECTION FOCUS OBJECTIVE', value: `\`\`\`text\n${session.answers[3] || "None"}\`\`\``, inline: false }
+                )
+                .setFooter({ text: "ADMINISTRATIVE REVIEW LOGS REQUIRED" })
+                .setTimestamp();
 
+            const cleanIgn = (session.answers[0] || "Player").replace(/\s+/g, '');
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`staff_accept_${userId}_${session.answers[0]}`).setLabel('Accept with Reason ✅').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`staff_deny_${userId}`).setLabel('Deny with Reason ❌').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId(`adm_accept_${userId}_${cleanIgn}`).setLabel('APPROVE FILE PROTOCOL').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`adm_deny_${userId}`).setLabel('REJECT INTERFACE DETECT').setStyle(ButtonStyle.Danger)
             );
 
-            await staffChannel.send({ embeds: [embed], components: [row] });
+            await staffChannel.send({ embeds: [adminReviewEmbed], components: [row] }).catch(console.error);
         }
         activeInterviews.delete(userId);
     }
 });
-
-// Staff ke Accept/Deny dabane par Modal (Popup Box) kholna
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
-    const [type, action, targetUserId, ign] = interaction.customId.split('_');
-    if (type !== 'staff') return;
+    const tokens = interaction.customId.split('_');
+    if (tokens[0] !== 'adm') return;
+
+    const action = tokens[1];
+    const targetUserId = tokens[2];
+    const ign = tokens[3] || "Player";
 
     if (action === 'accept') {
-        const modal = new ModalBuilder().setCustomId(`modal_accept_${targetUserId}_${ign}`).setTitle('Reason for Acceptance');
-        const reasonInput = new TextInputBuilder().setCustomId('accept_reason').setLabel("Accept karne ka ek solid reason likhein:").setStyle(TextInputStyle.Short).setRequired(true);
+        const modal = new ModalBuilder().setCustomId(`mdl_accept_${targetUserId}_${ign}`).setTitle('AUTHENTICATION APPROVAL LOGS');
+        const reasonInput = new TextInputBuilder().setCustomId('accept_reason').setLabel("SPECIFY SYSTEM METRIC APPROVAL NOTES:").setStyle(TextInputStyle.Short).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
         await interaction.showModal(modal);
     }
 
     if (action === 'deny') {
-        const modal = new ModalBuilder().setCustomId(`modal_deny_${targetUserId}`).setTitle('Reason for Rejection');
-        const reasonInput = new TextInputBuilder().setCustomId('deny_reason').setLabel("Application Reject karne ka reason dalein:").setStyle(TextInputStyle.Paragraph).setRequired(true);
+        const modal = new ModalBuilder().setCustomId(`mdl_deny_${targetUserId}`).setTitle('REJECTION TERMINATION RECORD');
+        const reasonInput = new TextInputBuilder().setCustomId('deny_reason').setLabel("ENTER SYSTEM DISMISSAL AUDIT REASONS:").setStyle(TextInputStyle.Paragraph).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
         await interaction.showModal(modal);
     }
 });
 
-// Modal submit hone par (Reason likhne ke baad ka action)
 client.on('interactionCreate', async interaction => {
     if (interaction.type !== InteractionType.ModalSubmit) return;
-    const [prefix, action, targetUserId, ign] = interaction.customId.split('_');
+    const tokens = interaction.customId.split('_');
+    if (tokens[0] !== 'mdl') return;
+
+    const action = tokens[1];
+    const targetUserId = tokens[2];
 
     if (action === 'accept') {
         await interaction.deferReply({ ephemeral: true });
         const reason = interaction.fields.getTextInputValue('accept_reason');
 
-        // Game Server command bypass (RCON standard query)
-        try {
-            const rcon = await Rcon.connect({
-                host: process.env.RCON_HOST,
-                port: parseInt(process.env.RCON_PORT),
-                password: process.env.RCON_PASSWORD
-            });
-            await rcon.send(`whitelist add ${ign}`);
-            await rcon.end();
-        } catch(e) { /* DiscordSRV mode bypass fallback */ }
-
-        // Discord user ko role dena aur DM me message ping karna
         const guild = interaction.guild;
         const member = await guild.members.fetch(targetUserId).catch(() => null);
         if (member) {
             await member.roles.add(process.env.WHITELIST_ROLE_ID).catch(() => null);
-            await member.send(`🎉 **Congratulations!** Aapki whitelist application **Accept** ho gayi hai!\n📌 **Reason:** ${reason}\nAb aap game server join kar sakte hain!`).catch(() => null);
+            
+            const dmSuccess = new EmbedBuilder()
+                .setTitle("🎉 RECRUITMENT NETWORK GRANTED")
+                .setDescription(`Your verification profile parameters have been checked and approved onto the premium whitelist server network.\n\n**MANAGEMENT ATTACHMENT DETAILS:**\n\`${reason}\``)
+                .setColor(0x00FF7F);
+                
+            await member.send({ embeds: [dmSuccess] }).catch(() => null);
         }
 
-        await interaction.editReply({ content: "✅ Player ko accept kar diya gaya hai aur DM bhej diya gaya hai!" });
-        await interaction.message.delete();
+        await interaction.editReply({ content: "✅ **SYSTEM SECURITY SYNC:** File processed successfully. Client Whitelisted." });
+        await interaction.message.delete().catch(() => null);
     }
 
     if (action === 'deny') {
@@ -176,15 +195,19 @@ client.on('interactionCreate', async interaction => {
         const guild = interaction.guild;
         const member = await guild.members.fetch(targetUserId).catch(() => null);
         if (member) {
-            await member.send(`❌ **Sorry!** Aapki whitelist application **Reject** kar di gayi hai.\n📌 **Reason:** ${reason}`).catch(() => null);
+            const dmFail = new EmbedBuilder()
+                .setTitle("❌ APPLICATION SYSTEM PURGED")
+                .setDescription(`Your application telemetry parameters have been denied authentication clear access.\n\n**FEEDBACK PROTOCOLS INCIDENT NOTE:**\n\`${reason}\``)
+                .setColor(0xFF0000);
+                
+            await member.send({ embeds: [dmFail] }).catch(() => null);
         }
 
-        await interaction.editReply({ content: "❌ Player ko reject kar diya gaya hai aur DM bhej diya gaya hai!" });
-        await interaction.message.delete();
+        await interaction.editReply({ content: "❌ **SYSTEM SECURITY SYNC:** Applicant file terminated successfully." });
+        await interaction.message.delete().catch(() => null);
     }
 });
 
-// Keep alive monitoring web-server script
 const http = require('http');
-http.createServer((req, res) => { res.write("ZetaBot System Online!"); res.end(); }).listen(process.env.PORT || 3000);
+http.createServer((req, res) => { res.write("Premium Network Hub Active."); res.end(); }).listen(process.env.PORT || 3000);
 client.login(process.env.DISCORD_TOKEN);
