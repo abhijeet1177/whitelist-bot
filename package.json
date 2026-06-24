@@ -1,7 +1,7 @@
 {
   "name": "whitelist-bot",
-  "version": "1.0.0",
-  "description": "QUIL SMP Advanced Whitelist Bot",
+  "version": "2.0.0",
+  "description": "QUIL SMP Auto Whitelist Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
