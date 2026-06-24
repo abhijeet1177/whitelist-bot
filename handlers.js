@@ -1,13 +1,37 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Rcon } = require('rcon-client'); // Auto-whitelist processing library
 
 // The 4 Whitelist Questions strictly defined as an array
 const QUESTIONS = [
-    "What is your In-Game Name (IGN)?",
+    "What is your In-Game Name (IGN)?", // Index 0: Iska use command query ke liye hoga
     "What is your Age?",
     "Have you played on any SMP before? (If yes, name it)",
     "Why do you want to join QUIL SMP?"
 ];
 
+// Automatically pulls credentials injected directly via Render dashboard
+const RCON_CONFIG = {
+    host: process.env.RCON_HOST,
+    port: parseInt(process.env.RCON_PORT) || 25575,
+    password: process.env.RCON_PASSWORD
+};
+
+// Pure application architecture me safe execution pipeline create karne ke liye wrapper
+async function runRconCommand(command) {
+    try {
+        if (!RCON_CONFIG.host || !RCON_CONFIG.password) {
+            console.error("❌ System Error: Render platform environment configurations are missing!");
+            return { success: false, error: "Environment variables not loaded" };
+        }
+        const rcon = await Rcon.connect(RCON_CONFIG);
+        const response = await rcon.send(command);
+        await rcon.end();
+        return { success: true, response };
+    } catch (err) {
+        console.error("❌ Network Core Fault: Cannot reach Minecraft console instance:", err);
+        return { success: false, error: err.message };
+    }
+}
 // Handles Button Clicks (Apply, Approve, Reject)
 async function handleInteractions(interaction, db) {
     const guildId = interaction.guild?.id;
@@ -32,9 +56,7 @@ async function handleInteractions(interaction, db) {
         }
 
         try {
-            // Correct indexing to only send the FIRST question (Index 0)
             await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
-            
             await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS[0]}`);
             return interaction.reply({ content: "📥 **Check your DMs!** The first question has been sent to your inbox.", ephemeral: true });
         } catch (err) {
@@ -57,18 +79,42 @@ async function handleInteractions(interaction, db) {
         if (action === 'approve') {
             if (!targetMember) return interaction.reply({ content: "❌ This player is no longer in the server.", ephemeral: true });
 
+            const messageEmbeds = interaction.message.embeds;
+            if (!messageEmbeds || messageEmbeds.length === 0) {
+                return interaction.reply({ content: "❌ Application payload structure context lost.", ephemeral: true });
+            }
+
+            const targetEmbed = messageEmbeds[0];
+            const ignField = targetEmbed.fields.find(f => f.name.includes(QUESTIONS[0]));
+            const minecraftIGN = ignField ? ignField.value.replace(/```/g, '').trim() : null;
+
+            if (!minecraftIGN) {
+                return interaction.reply({ content: "❌ Extraction Error: Embedded string format signature missing game account tracking name.", ephemeral: true });
+            }
+
+            await interaction.deferUpdate();
+
+            const rconTxOutput = await runRconCommand(`whitelist add ${minecraftIGN}`);
+
+            if (!rconTxOutput.success) {
+                return interaction.followUp({ content: `⚠️ Discord role process cleared, but **RCON gateway routing dropped execution!** Target \`${minecraftIGN}\` must be whitelist updated manually via live operator command console.`, ephemeral: true });
+            }
+
             try {
                 await targetMember.roles.add(serverConfig.roleId);
 
-                const approvedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                const approvedEmbed = EmbedBuilder.from(targetEmbed)
                     .setColor(0x2ECC71)
-                    .setTitle("✅ Application Approved")
-                    .addFields({ name: "🛡️ Action Taken By", value: `${interaction.user} (\`${staffName}\`)`, inline: false });
+                    .setTitle("✅ Application Processed & Synced")
+                    .addFields(
+                        { name: "🛡️ Action Taken By", value: `${interaction.user} (\`${staffName}\`)`, inline: true },
+                        { name: "🎮 RCON Auto-Link", value: `\`🟢 Whitelisted: ${minecraftIGN}\``, inline: true }
+                    );
 
-                await interaction.update({ embeds: [approvedEmbed], components: [] });
-                return targetMember.send(`🎉 **Congratulations!** Your whitelist application has been approved by staff member **${staffName}**! You can access the server now.`).catch(() => null);
+                await interaction.editReply({ embeds: [approvedEmbed], components: [] });
+                return targetMember.send(`🎉 **Congratulations!** Your whitelist entry request has been accepted. Account **${minecraftIGN}** has been automatically linked to the live server system!`).catch(() => null);
             } catch (error) {
-                return interaction.reply({ content: "❌ **Role Hierarchy Error!** Open Server Settings -> Roles, and drag your Bot's role ABOVE the role you setup.", ephemeral: true });
+                return interaction.followUp({ content: "❌ **Role Hierarchy Conflict!** Open Discord Client settings, drag your Bot identity position index tag ABOVE the targets role configuration mapping layer.", ephemeral: true });
             }
         }
 
@@ -86,7 +132,6 @@ async function handleInteractions(interaction, db) {
         }
     }
 }
-
 // Handles DM Questions Sequentially
 async function handleMessages(message, client, db) {
     if (message.author.bot || message.guild) return;
@@ -97,27 +142,20 @@ async function handleMessages(message, client, db) {
 
     let { guildId, currentStep, answers } = appData;
     
-    // Save current answer safely
     answers.push(message.content);
     currentStep++;
 
     if (currentStep < QUESTIONS.length) {
         await db.set(`active_app_${userId}`, { guildId, currentStep, answers });
-        // Send exactly NEXT question one-by-one
         return message.author.send(`**Question ${currentStep + 1}:** ${QUESTIONS[currentStep]}`);
     } else {
         const finalInstructionsEmbed = new EmbedBuilder()
             .setTitle("✨ APPLICATION SUBMITTED SUCCESSFULLY ✨")
             .setColor(0x3498DB)
             .setDescription(
-                "### 📥 Final Verification Required\n" +
-                "Your entry request form has been safely forwarded to the **QUIL SMP** administration panel.\n\n" +
-                "```📌 MANDATORY NEXT STEP```\n" +
-                "To automatically map and complete your linking pipeline, please perform the following execution immediately:\n\n" +
-                "1️⃣ Launch your Minecraft client and **Join the Server**.\n" +
-                "2️⃣ Upon logging in, type your assigned **4-Digit Access Code** inside the server game-chat.\n" +
-                "3️⃣ Your character data will sync automatically.\n\n" +
-                "*Failure to execute the synchronization protocol will delay your final authorization process.*"
+                "### 📥 Verification Pipeline Active\n" +
+                "Your details form has been securely dispatched onto the **QUIL SMP** administration interface terminal channels.\n\n" +
+                "When administrators activate the verification trigger button panel, your registration profile parameters will synchronize onto the network system cluster immediately!"
             )
             .setFooter({ text: "QUIL SMP Automation Gateway" })
             .setTimestamp();
@@ -126,7 +164,10 @@ async function handleMessages(message, client, db) {
 
         const serverConfig = await db.get(`guild_config_${guildId}`);
         const guildInstance = await client.guilds.fetch(guildId).catch(() => null);
-        if (!guildInstance) return db.delete(`active_app_${userId}`);
+        
+        if (!guildInstance || !serverConfig || !serverConfig.logChannelId) {
+            return await db.delete(`active_app_${userId}`);
+        }
         
         const targetMember = await guildInstance.members.fetch(userId).catch(() => null);
         const logChannel = await client.channels.fetch(serverConfig.logChannelId).catch(() => null);
@@ -150,14 +191,16 @@ async function handleMessages(message, client, db) {
             QUESTIONS.forEach((q, idx) => staffFormEmbed.addFields({ name: `❓ ${q}`, value: `\`\`\`${answers[idx]}\`\`\`` }));
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`approve_${userId}`).setLabel('Approve Applicant ✅').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`approve_${userId}`).setLabel('Approve & Whitelist ✅').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`reject_${userId}`).setLabel('Reject Applicant ❌').setStyle(ButtonStyle.Danger)
             );
 
             await logChannel.send({ embeds: [staffFormEmbed], components: [row] });
         }
-        return db.delete(`active_app_${userId}`);
+
+        await db.delete(`active_app_${userId}`);
     }
 }
 
+// Exporting both core functions cleanly
 module.exports = { handleInteractions, handleMessages };
