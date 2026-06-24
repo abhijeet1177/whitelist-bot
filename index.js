@@ -152,7 +152,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 try {
                     await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
-                    await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS[0]}`);
+                    await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS}`);
                     return interaction.reply({ content: "📥 **Check your DMs!** The first question has been sent to your inbox.", ephemeral: true });
                 } catch (err) {
                     await db.delete(`active_app_${userId}`);
@@ -179,10 +179,10 @@ client.on('interactionCreate', async (interaction) => {
                         return interaction.reply({ content: "❌ Application payload structure context lost.", ephemeral: true });
                     }
 
-                    const targetEmbed = messageEmbeds[0];
+                    const targetEmbed = messageEmbeds;
                     
-                    // FIXED: Strictly targets index question string for bulletproof data parsing
-                    const ignField = targetEmbed.fields.find(f => f.name.includes(QUESTIONS[0]));
+                    // FIXED LOGIC: Grabs the very first field value directly, guaranteeing it pulls the IGN answer
+                    const ignField = targetEmbed.fields && targetEmbed.fields.length > 0 ? targetEmbed.fields : null;
                     const minecraftIGN = ignField ? ignField.value.replace(/```/g, '').trim() : null;
 
                     if (!minecraftIGN) {
@@ -194,7 +194,7 @@ client.on('interactionCreate', async (interaction) => {
                     const rconTxOutput = await runRconCommand(`whitelist add ${minecraftIGN}`);
 
                     if (!rconTxOutput.success) {
-                        return interaction.followUp({ content: `⚠️ Discord role updated, but **RCON dropped execution!** Target \`${minecraftIGN}\` must be whitelisted manually via game console.`, ephemeral: true });
+                        return interaction.followUp({ content: `⚠️ Discord role updated, but **RCON failed to connect to the server!** Target \`${minecraftIGN}\` must be whitelisted manually via game console.`, ephemeral: true });
                     }
 
                     try {
@@ -216,7 +216,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (action === 'reject') {
-                    const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                    const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds)
                         .setColor(0xE74C3C)
                         .setTitle("❌ Application Rejected")
                         .addFields({ name: "🛡️ Action Taken By", value: `${interaction.user} (\`${staffName}\`)`, inline: false });
@@ -224,7 +224,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.update({ embeds: [rejectedEmbed], components: [] });
                     
                     if (targetMember) {
-                        return targetMember.send(`❌ **Sorry**, your whitelist application has been rejected by staff member **${strong(staffName)}**.`).catch(() => null);
+                        return targetMember.send(`❌ **Sorry**, your whitelist application has been rejected by staff member **${staffName}**.`).catch(() => null);
                     }
                 }
             }
@@ -233,7 +233,6 @@ client.on('interactionCreate', async (interaction) => {
         console.error('Interaction Error:', err);
     }
 });
-// DM Application Steps Event Listener Handler
 client.on('messageCreate', async (message) => {
     try {
         if (message.author.bot || message.guild) return;
