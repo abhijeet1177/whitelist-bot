@@ -152,7 +152,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 try {
                     await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
-                    await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS}`);
+                    await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS[0]}`);
                     return interaction.reply({ content: "📥 **Check your DMs!** The first question has been sent to your inbox.", ephemeral: true });
                 } catch (err) {
                     await db.delete(`active_app_${userId}`);
@@ -179,14 +179,14 @@ client.on('interactionCreate', async (interaction) => {
                         return interaction.reply({ content: "❌ Application payload structure context lost.", ephemeral: true });
                     }
 
-                    const targetEmbed = messageEmbeds;
+                    const targetEmbed = messageEmbeds[0];
                     
-                    // FIXED LOGIC: Grabs the very first field value directly, guaranteeing it pulls the IGN answer
-                    const ignField = targetEmbed.fields && targetEmbed.fields.length > 0 ? targetEmbed.fields : null;
+                    // FIXED LOOKUP: Scans your exact layout in the image for the "Minecraft IGN" block
+                    const ignField = targetEmbed.fields ? targetEmbed.fields.find(f => f.name.includes("Minecraft IGN")) : null;
                     const minecraftIGN = ignField ? ignField.value.replace(/```/g, '').trim() : null;
 
                     if (!minecraftIGN) {
-                        return interaction.reply({ content: "❌ Extraction Error: Could not parse a valid Minecraft IGN out of the form.", ephemeral: true });
+                        return interaction.reply({ content: "❌ Extraction Error: Could not parse a valid Minecraft IGN out of the form fields.", ephemeral: true });
                     }
 
                     await interaction.deferUpdate();
@@ -216,7 +216,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (action === 'reject') {
-                    const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds)
+                    const rejectedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
                         .setColor(0xE74C3C)
                         .setTitle("❌ Application Rejected")
                         .addFields({ name: "🛡️ Action Taken By", value: `${interaction.user} (\`${staffName}\`)`, inline: false });
