@@ -65,6 +65,40 @@ async function handleInteractions(interaction, db) {
         }
     }
 
+    // Handles Button Clicks (Apply, Approve, Reject)
+async function handleInteractions(interaction, db) {
+    const guildId = interaction.guild?.id;
+    const userId = interaction.user.id;
+
+    if (!interaction.isButton()) return;
+
+    // A. APPLICANT REGISTRATION TRIGGER
+    if (interaction.customId === 'start_whitelist_app') {
+        const serverConfig = await db.get(`guild_config_${guildId}`);
+        if (!serverConfig || !serverConfig.roleId) {
+            return interaction.reply({ content: "❌ System error: Setup configuration or Role is missing. Please run `/setup` first.", ephemeral: true });
+        }
+
+        if (interaction.member.roles.cache.has(serverConfig.roleId)) {
+            return interaction.reply({ content: "❌ You are already whitelisted on this server!", ephemeral: true });
+        }
+
+        const activeApp = await db.get(`active_app_${userId}`);
+        if (activeApp) {
+            return interaction.reply({ content: "⏳ Your application session is already active. Please complete it in your DMs!", ephemeral: true });
+        }
+
+        try {
+            await db.set(`active_app_${userId}`, { guildId, currentStep: 0, answers: [] });
+            // FIXED: Now correctly references index [0] to send the first question text cleanly
+            await interaction.user.send(`👋 **Welcome to the QUIL SMP Whitelist Process!**\n\n**Question 1:** ${QUESTIONS[0]}`);
+            return interaction.reply({ content: "📥 **Check your DMs!** The first question has been sent to your inbox.", ephemeral: true });
+        } catch (err) {
+            await db.delete(`active_app_${userId}`);
+            return interaction.reply({ content: "❌ **Failed to send DM!** Please enable 'Allow Direct Messages' in your Privacy Settings.", ephemeral: true });
+        }
+    }
+
     // B. STAFF APPROVAL AND REJECTION SYSTEM
     if (interaction.customId.startsWith('approve_') || interaction.customId.startsWith('reject_')) {
         if (!interaction.member.permissions.has('ManageRoles')) {
@@ -85,11 +119,13 @@ async function handleInteractions(interaction, db) {
             }
 
             const targetEmbed = messageEmbeds[0];
+            
+            // FIXED: Target only the explicit first question string (IGN) for validation parsing
             const ignField = targetEmbed.fields.find(f => f.name.includes(QUESTIONS[0]));
             const minecraftIGN = ignField ? ignField.value.replace(/```/g, '').trim() : null;
 
             if (!minecraftIGN) {
-                return interaction.reply({ content: "❌ Extraction Error: Embedded string format signature missing game account tracking name.", ephemeral: true });
+                return interaction.reply({ content: "❌ Extraction Error: Could not parse a valid Minecraft IGN out of the application layout form.", ephemeral: true });
             }
 
             await interaction.deferUpdate();
@@ -97,7 +133,7 @@ async function handleInteractions(interaction, db) {
             const rconTxOutput = await runRconCommand(`whitelist add ${minecraftIGN}`);
 
             if (!rconTxOutput.success) {
-                return interaction.followUp({ content: `⚠️ Discord role process cleared, but **RCON gateway routing dropped execution!** Target \`${minecraftIGN}\` must be whitelist updated manually via live operator command console.`, ephemeral: true });
+                return interaction.followUp({ content: `⚠️ Discord role process updated, but **RCON network tracking timed out!** Target \`${minecraftIGN}\` must be manual whitelisted via live server engine command lines.`, ephemeral: true });
             }
 
             try {
@@ -132,6 +168,7 @@ async function handleInteractions(interaction, db) {
         }
     }
 }
+
 // Handles DM Questions Sequentially
 async function handleMessages(message, client, db) {
     if (message.author.bot || message.guild) return;
